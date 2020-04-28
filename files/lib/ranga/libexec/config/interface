@@ -1,0 +1,201 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/config.sh
+. ${NSWA_PREFIX}/lib/ckextra.sh
+. ${NSWA_PREFIX}/lib/auth.sh
+
+auth || exit 3
+
+ckifname() {
+	ckiface "$1" || exit 1
+}
+
+ckiftype() {
+	case "$1" in
+	static|dhcp|pppoe|none) return 0
+	esac
+	return 1
+}
+
+config() {
+	local action="$1"
+	local name="$2"
+	local key="$3"
+	local value="$4"
+
+	case "$key" in
+	type)
+		if [ "$action" = "set" ]; then
+			[ "$name" = "netkeeper" -a "$value" != "pppoe" ] && return 1
+			ckiftype "$value" || return 2
+		fi
+		ucimapper "${action}" "network.${name}.proto" "${value}"
+		return $?
+		;;
+	nkplugin)
+		case "$action" in
+		set)
+			case "$value" in
+			off)
+				[ "$name" = "netkeeper" ] && return 1
+				uci get "network.${name}.pppd_options" > /dev/null 2>&1
+				if [ "$?" = "0" ]; then
+					uci delete network.${name}.pppd_options
+					[ "$?" != "0" ] && return 1
+					uci commit
+				fi
+
+				return 0
+				;;
+			cmcc_sd|on|nkplugin)
+				uci set network.${name}.pppd_options='plugin nkplugin.so'
+				[ "$?" != "0" ] && return 1
+				uci commit
+				;;
+			*)
+				return 1
+				;;
+			esac
+			;;
+		get)
+			option=`uci get "network.${name}.pppd_options" 2>&1`
+			case "$option" in
+			'plugin nkplugin.so')
+				echo 'cmcc_sd'
+				;;
+			*)
+				echo 'off'
+				;;
+			esac
+			;;
+		esac
+		;;
+	usrnam)
+		ucimapper "${action}" "network.${name}.username" "${value}" '' set-blank-reset
+		return $?
+		;;
+	passwd)
+		ucimapper "${action}" "network.${name}.password" "${value}" '' set-blank-reset
+		return $?
+		;;
+	rvlan)
+		[ "$name" = netkeeper -o "$name" = "wan" ] && return 1
+
+		case "${action}" in
+		set)
+			ckint "$value" || return 1
+			uci set "network.${name}.ifname=vlan${value}"
+			metric=`expr ${value} + 1`
+			uci set "network.${name}.metric=${metric}"
+			uci commit
+			return 0
+			;;
+		get)
+			metric=`uci get "network.${name}.metric"`
+			expr "$metric" - 1
+			return 0
+			;;
+		esac
+		;;
+	macaddr)
+		if [ "$action" = "set" ]; then
+			ckmac "$value" || return 1
+			[ "$name" = 'wan' ] && uci set network.wan_dev.macaddr="${value}"
+		fi
+		ucimapper "${action}" "network.${name}.macaddr" "${value}"
+		return $?
+		;;
+	ipaddr|netmask|gateway|defaultroute|ipv6)
+		ucimapper "${action}" "network.${name}.${key}" "${value}" '' set-blank-reset
+		return $?
+		;;
+	*)
+		return 1
+		;;
+	esac
+
+	return 0
+}
+
+show() {
+	echo -n "$2: "
+	config get "$1" "$2"
+	[ "$?" != '0' ] && echo
+}
+
+case "$1" in
+ls)
+	echo 'wan'
+	echo 'netkeeper'
+	uci show network | grep "^network.md.*=interface$" | sed 's/^[^\.]*\.\([^=]*\)=.*/\1/g'
+	exit 0
+	;;
+set)
+	ckifname "$2"
+	config set "$2" "$3" "$4"
+	exit $?
+	;;
+get)
+	ckifname "$2"
+	config get "$2" "$3"
+	exit $?
+	;;
+show)
+	ckifname "$2"
+	show "$2" type
+	show "$2" nkplugin
+	show "$2" usrnam
+	show "$2" passwd
+	show "$2" rvlan
+	show "$2" macaddr
+	show "$2" ipaddr
+	show "$2" netmask
+	show "$2" gateway
+	show "$2" defaultroute
+	show "$2" ipv6
+	;;
+add)
+	name="$2"
+	ckifname "$name"
+	if [ "${name:0:2}" != 'md' ]; then
+		exit 1
+	fi
+
+	uci set network.${name}=interface
+	uci set network.${name}.ifname=''
+	uci set network.${name}.proto=none
+	uci set network.${name}.username=''
+	uci set network.${name}.password=''
+	uci set network.${name}.metric='0'
+	uci set network.${name}.auto='0'
+	uci set network.${name}.macaddr='00:00:00:00:00:00'
+
+	#uci set network.${name}_dev=device
+	#uci set network.${name}_dev.macaddr='00:00:00:00:00:00'
+	uci commit network
+	exit 0
+	;;
+remove)
+	name="$2"
+	[ "$name" = 'netkeeper' -o "$name" = 'wan' ] && exit 2
+	ckifname "$name"
+	[ "${name:0:2}" != 'md' ] && exit 1
+
+	uci delete "network.${name}"
+	uci delete "network.${name}_dev"
+	uci commit network
+
+	wname="w${name}"
+	uci delete "mwan3.${name}"
+	uci delete "mwan3.${wname}"
+	uci del_list mwan3.balanced.use_member="${wname}"
+	uci commit mwan3
+	${NSWA_PREFIX}/libexec/update-wanzone.sh "$name"
+	;;
+*)
+	exit 1
+	;;
+esac
+
+exit 0

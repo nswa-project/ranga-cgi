@@ -1,0 +1,80 @@
+#!/bin/sh
+echo 'Content-type: text/plain; charset=utf-8'
+echo ''
+
+errquit() {
+	echo "code: $1"
+	echo ''
+	exit 0
+}
+
+parseQS() {
+	local a="$QUERY_STRING"
+	a="${a#*${1}=}"
+
+	if [ "$a" = "$QUERY_STRING" ]; then
+		echo -n ""
+		return 0
+	fi
+
+	a="${a%%&*}"
+
+	a="${a//+/ }"
+	local url_encoded="${1//+/ }"
+	echo -e "${a//%/\\x}"
+}
+
+action=`parseQS action`
+standalone=`parseQS standalone`
+
+case "$standalone" in
+1)
+	password=`parseQS password`
+	pass=`cat /etc/ranga/pass-nswa`
+	if [ "$password" != "$pass" ]; then
+		errquit 3
+	fi
+	;;
+*)
+	. /lib/ranga/lib/auth.sh
+	auth || errquit 3
+	;;
+esac
+
+exec 1000>/tmp/nswa-upgrade.lock
+
+case "$action" in
+patch)
+	[ "$REQUEST_METHOD" != "POST" ] && errquit 1
+	reboot=`parseQS reboot`
+	[ "$reboot" != '1' ] && reboot=''
+
+	flock -n 1000
+	[ "$?" != "0" ] && errquit 5
+
+	rm -f /tmp/nswaup.bin
+	cat > /tmp/nswaup.bin
+	cat /dev/null > /tmp/sysupgrade.log
+	/lib/ranga/sysupgrade.sh "$reboot" < /dev/null > /dev/null 2>&1 &
+
+	echo -en 'code: 0\n\nUpload success. Deploying...\n'
+	;;
+fp_earse_configure)
+	touch /tmp/.fp_earse_configure
+	echo -en 'code: 0\n\ndone\n'
+	;;
+status)
+	flock -n 1000
+	if [ "$?" != "0" ]; then
+		echo -en "code: 0\nswdeploy-status: 1\n\n"
+	else
+		echo -en "code: 0\nswdeploy-status: 0\n\n"
+	fi
+	;;
+log)
+	echo -en "code: 0\n\n"
+	cat /tmp/sysupgrade.log
+	;;
+esac
+
+exit 0

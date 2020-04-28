@@ -1,0 +1,170 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/config.sh
+. ${NSWA_PREFIX}/lib/auth.sh
+
+auth || exit 3
+
+ckname() {
+	case "$1" in
+	''|*[!0-9]*) exit 1 ;;
+	esac
+}
+
+config() {
+	local action="$1"
+	local name="$2"
+	local key="$3"
+	local value="$4"
+
+	case "$key" in
+	chiper)
+		case "${action}" in
+		set)
+			case "$value" in
+			RANGA_WIRELESS_WPA3_SAE) c="sae" ;;
+			RANGA_WIRELESS_WPA3MIX2_SAE_AND_PSK) c="sae-mixed" ;;
+			NSWA_WIFI_ENC_WPA2_PSK_WITH_CCMP) c="psk2+ccmp" ;;
+			NSWA_WIFI_ENC_WPA2_PSK_WITH_TKIP) c="psk2+tkip" ;;
+			NSWA_WIFI_ENC_WPA2_PSK_WITH_TKIP_AND_CCMP) c="psk2+tkip+ccmp" ;;
+			NSWA_WIFI_ENC_WPA_PSK_WITH_CCMP) c="psk+ccmp" ;;
+			NSWA_WIFI_ENC_WPA_PSK_WITH_TKIP) c="psk+tkip" ;;
+			NSWA_WIFI_ENC_WPA2_AND_WPA_PSK_WITH_TKIP_AND_CCMP) c="psk-mixed+tkip+ccmp" ;;
+			NSWA_WIFI_ENC_NULL_NULL_WITH_NULL|RANGA_WIRELESS_OPEN) c="none" ;;
+			*) return 2 ;;
+			esac
+
+			ucimapper set "wireless.default_radio${name}.encryption" "${c}"
+			return $?
+			;;
+		get)
+			a=`uci get "wireless.default_radio${name}.encryption"`
+			[ "$?" = '0' ] || return 1
+			case "$a" in
+			sae) echo 'RANGA_WIRELESS_WPA3_SAE' ;;
+			sae-mixed) echo 'RANGA_WIRELESS_WPA3MIX2_SAE_AND_PSK' ;;
+			psk2+ccmp) echo 'NSWA_WIFI_ENC_WPA2_PSK_WITH_CCMP' ;;
+			psk2+tkip) echo 'NSWA_WIFI_ENC_WPA2_PSK_WITH_TKIP' ;;
+			psk2+tkip+ccmp) echo 'NSWA_WIFI_ENC_WPA2_PSK_WITH_TKIP_AND_CCMP' ;;
+			psk+ccmp) echo 'NSWA_WIFI_ENC_WPA_PSK_WITH_CCMP' ;;
+			psk-mixed+tkip+ccmp) echo 'NSWA_WIFI_ENC_WPA2_AND_WPA_PSK_WITH_TKIP_AND_CCMP' ;;
+			none) echo 'RANGA_WIRELESS_OPEN' ;;
+			*) echo 'RANGA_WIRELESS_VENDER' ;;
+			esac
+			return 0
+			;;
+		esac
+		;;
+	psk.ssid)
+		ucimapper "${action}" "wireless.default_radio${name}.ssid" "${value}"
+		return $?
+		;;
+	psk.key)
+		ucimapper "${action}" "wireless.default_radio${name}.key" "${value}"
+		return $?
+		;;
+	channel)
+		ucimapper "${action}" "wireless.radio${name}.${key}" "${value}"
+		return $?
+		;;
+	country|rts|distance|htmode|txpower|noscan|macaddr)
+		ucimapper "${action}" "wireless.radio${name}.${key}" "${value}" '' set-blank-reset
+		return $?
+		;;
+	hidden|isolate)
+		ucimapper "${action}" "wireless.default_radio${name}.${key}" "${value}" '' set-blank-reset
+		return $?
+		;;
+	macfilter.mode)
+		if [ "$action" = 'set' ]; then
+			case "$value" in
+			''|allow|deny|disable) ;;
+			*) return 1 ;;
+			esac
+		fi
+		ucimapper "${action}" "wireless.default_radio${name}.macfilter" "${value}" '' set-blank-reset
+		return $?
+		;;
+	macfilter.list)
+		case "$action" in
+		set)
+			shift 3
+			[ -z "$1" ] && return 1
+			uci delete "wireless.default_radio${name}.maclist"
+			uci add_list "wireless.default_radio${name}.maclist=${1}"
+			uci commit
+			return $?
+			;;
+		get)
+			uci get "wireless.default_radio${name}.maclist" 2>/dev/null
+			;;
+		esac
+		;;
+	esac
+
+	return 1
+}
+
+show() {
+	echo -n "$2: "
+	config get "$1" "$2"
+	[ "$?" != '0' ] && echo
+}
+
+case "$1" in
+ls)
+	uci show wireless | grep 'wireless.radio.*=wifi-device' | sed 's/^[^\.]*\.radio\([^=]*\)=.*/\1/g'
+	exit 0
+	;;
+set)
+	ckname "$2"
+	config "$@"
+	exit $?
+	;;
+get)
+	ckname "$2"
+	config get "$2" "$3"
+	exit $?
+	;;
+show)
+	ckname "$2"
+	show "$2" chiper
+	show "$2" psk.ssid
+	show "$2" psk.key
+	show "$2" hidden
+	show "$2" isolate
+	show "$2" channel
+	show "$2" country
+	show "$2" rts
+	show "$2" distance
+	show "$2" htmode
+	show "$2" txpower
+	show "$2" noscan
+	show "$2" macaddr
+	show "$2" macfilter.mode
+	show "$2" macfilter.list
+	;;
+auto)
+	key="$3"
+	ssid="${2}"
+	for i in `cat /etc/ranga/wifidev`; do
+		card=`echo "$i" | cut -d ':' -f 2`
+
+		if [ "$4" = '1' ]; then
+			suffix=`echo "$i" | cut -d ':' -f 1`
+			ssid="${2} ${suffix}"
+		fi
+
+		config set "$card" psk.ssid "$ssid"
+		[ "$?" != '0' ] && exit $?
+		config set "$card" psk.key "$key"
+		[ "$?" != '0' ] && exit $?
+	done
+	;;
+*)
+	exit 1
+	;;
+esac
+
+exit 0

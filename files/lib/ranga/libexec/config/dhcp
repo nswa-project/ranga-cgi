@@ -1,0 +1,89 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/config.sh
+. ${NSWA_PREFIX}/lib/ckextra.sh
+. ${NSWA_PREFIX}/lib/auth.sh
+
+auth || exit 3
+
+config() {
+	local action="$1"
+	local key="$2"
+	local value="$3"
+
+	case "$key" in
+	leasetime)
+		ucimapper "${action}" "dhcp.lan.${key}" "${value}"
+		return $?
+		;;
+	start|limit)
+		ucimapper "${action}" "dhcp.lan.${key}" "${value}" int
+		return $?
+		;;
+	ramode)
+		ucimapper "${action}" "dhcp.lan.ra_management" "${value}" int
+		return $?
+		;;
+	noping)
+		ucimapper "${action}" "dhcp.lan.${key}" "${value}" bool
+		return $?
+		;;
+	*)
+		return 1
+		;;
+	esac
+
+	return 0
+}
+
+show() {
+	echo -n "$1: "
+	config get "$1"
+	[ "$?" != '0' ] && echo
+}
+
+case "$1" in
+add-ipv4-bind)
+	[ -z "$2" -o -z "$3" ] && exit 1
+
+	b=`echo -n "${2}" | tr -d '\r\n'`
+	c=`echo -n "${3}" | tr -d '\r\n'`
+
+	ckinet4 "$b" || exit 1
+	ckmac "$c" || exit 1
+
+	echo "dhcp-host=${c},${b}" >> /etc/dnsmasq.d/ipmac.conf
+	;;
+rem-ipv4-bind)
+	b=`echo -n "${2}" | tr -d '\r\n'`
+	ckinet4 "$b" || exit 1
+	sed -i "/${2}/d" /etc/dnsmasq.d/ipmac.conf
+	;;
+cat-ipv4-bind)
+	cat /etc/dnsmasq.d/ipmac.conf 2>/dev/null | sed 's/^dhcp-host=//g'
+	;;
+clear-ipv4-bind)
+	cat /dev/null > /etc/dnsmasq.d/ipmac.conf
+	;;
+set)
+	config set "$2" "$3"
+	exit $?
+	;;
+get)
+	config get "$2"
+	exit $?
+	;;
+show)
+	show leasetime
+	show start
+	show limit
+	show noping
+	show ramode
+	;;
+*)
+	exit 1
+	;;
+esac
+
+exit 0

@@ -1,0 +1,27 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/auth.sh
+. ${NSWA_PREFIX}/lib/mwan.sh
+
+auth || exit 3
+
+case "$1" in
+wlup)
+	wifi up < /dev/null > /dev/null 2>&1
+	${NSWA_PREFIX}/run-hooks "reldwl" < /dev/null > /dev/null 2>&1 &
+	;;
+wldown)
+	wifi down < /dev/null > /dev/null 2>&1
+	ifconfig ra0 down
+	ifconfig rai0 down
+	;;
+btup|btdown)
+	exit 2
+	;;
+*)
+	exit 1
+	;;
+esac
+
+exit 0

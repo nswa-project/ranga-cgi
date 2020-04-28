@@ -1,0 +1,230 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/config.sh
+. ${NSWA_PREFIX}/lib/ckextra.sh
+. ${NSWA_PREFIX}/lib/auth.sh
+. ${NSWA_PREFIX}/lib/mwan.sh
+
+auth || exit 3
+
+ckifname() {
+	local name="$1"
+	ckiface "$name" || exit 1
+	[ "${name:0:2}" != 'md' -a "${name}" != 'netkeeper' -a "${name}" != 'wan' ] && exit 1
+}
+
+config() {
+	local action="$1"
+	local name="$2"
+	local key="$3"
+	local value="$4"
+
+	case "$key" in
+	trackIPlist)
+		case "$action" in
+		set)
+			shift 3
+			[ -z "$1" ] && return 1
+
+			uci delete "mwan3.${name}.track_ip"
+			while [ -n "$1" ]; do
+				uci add_list "mwan3.${name}.track_ip=${1}"
+				shift
+			done
+			uci commit
+			return $?
+			;;
+		get)
+			t=`uci show mwan3.${name}.track_ip`
+			echo "${t#*=}"
+			;;
+		esac
+		;;
+	timeout|interval|reliability|up|down)
+		ucimapper "${action}" "mwan3.${name}.${key}" "${value}" int
+		return $?
+		;;
+	metric|weight)
+		ucimapper "${action}" "mwan3.w${name}.${key}" "${value}" int
+		return $?
+		;;
+	*)
+		return 1
+		;;
+	esac
+
+	return 0
+}
+
+show() {
+	echo -n "$2: "
+	config get "$1" "$2"
+	[ "$?" != '0' ] && echo
+}
+
+isexist() {
+	uci get "mwan3.$1" > /dev/null 2>&1 || return 1
+	return 0
+}
+
+case "$1" in
+enable)
+	${NSWA_PREFIX}/libexec/create-rvlan.sh
+	/etc/init.d/mwan3 enable
+	/etc/init.d/mwan3 start < /dev/null > /dev/null 2>&1
+	;;
+disable)
+	/etc/init.d/mwan3 disable
+	/etc/init.d/mwan3 stop
+	;;
+is-enabled)
+	mwan_is_enabled && echo "enabled" || echo "disabled"
+	;;
+ls)
+	uci show mwan3 | grep '=interface' | sed 's/^[^\.]*\.\([^=]*\)=.*/\1/g'
+	exit 0
+	;;
+set)
+	ckifname "$2"
+	config "$@"
+	exit $?
+	;;
+get)
+	ckifname "$2"
+	config get "$2" "$3"
+	exit $?
+	;;
+show)
+	ckifname "$2"
+	show "$2" trackIPlist
+	show "$2" timeout
+	show "$2" interval
+	show "$2" reliability
+	show "$2" up
+	show "$2" down
+	show "$2" metric
+	show "$2" weight
+	;;
+is-exist)
+	name="$2"
+	ckifname "$name"
+	isexist "$2" && echo 'yes' || echo 'no'
+	;;
+add)
+	name="$2"
+	ckifname "$name"
+
+	uci set mwan3.${name}=interface
+	uci set mwan3.${name}.enabled='1'
+	uci set mwan3.${name}.reliability='1'
+	uci set mwan3.${name}.count='1'
+	uci set mwan3.${name}.timeout='4'
+	uci set mwan3.${name}.interval='10'
+	uci set mwan3.${name}.down='3'
+	uci set mwan3.${name}.up='5'
+	uci set mwan3.${name}.family='ipv4'
+	#uci add_list mwan3.${name}.track_ip='223.5.5.5'
+	uci add_list mwan3.${name}.track_ip='114.114.114.114'
+
+	wname="w${name}"
+	uci set mwan3.${wname}=member
+	uci set mwan3.${wname}.interface="${name}"
+	uci set mwan3.${wname}.metric='1'
+	uci set mwan3.${wname}.weight='1'
+	uci add_list mwan3.balanced.use_member="${wname}"
+
+	uci commit mwan3
+	${NSWA_PREFIX}/libexec/update-wanzone.sh
+	exit 0
+	;;
+remove)
+	name="$2"
+	ckifname "$name"
+
+	wname="w${name}"
+	uci delete "mwan3.${name}"
+	uci delete "mwan3.${wname}"
+	uci del_list mwan3.balanced.use_member="${wname}"
+	uci commit mwan3
+	${NSWA_PREFIX}/libexec/update-wanzone.sh "$name"
+	;;
+lsrule)
+	uci show mwan3 | egrep 'mwan3\.c.+=rule$' | sed -e 's/^mwan3.c//' -e 's/=rule$//' | while read -r rule ; do
+		echo "$rule"
+		name="c$rule"
+		pname="p$name"
+		uci show "mwan3.${name}" | grep -E '\.src_ip|\.src_port|\.dest_ip|\.dest_port'  | sed -e 's/^mwan3.c[^\.]*.//g' -e "s/='/=/g" -e "s/'$//g"
+		ifs=`uci get "mwan3.${pname}.use_member" | sed -e 's/^w//g' -e 's/ w/ /g'`
+		echo "interfaces=${ifs}"
+		echo
+	done
+	;;
+addrule)
+	ckiface "$2" || exit 1
+	ckstrlen "$2" 10 || exit 1
+	name="c$2"
+	pname="p$name"
+	uci set "mwan3.${name}=rule"
+	uci set "mwan3.${name}.use_policy=${pname}"
+	uci set "mwan3.${pname}=policy"
+	uci reorder "mwan3.${name}=1"
+	uci reorder "mwan3.${pname}=1"
+	uci commit mwan3
+	;;
+cfgrule)
+	ckiface "$2" || exit 1
+	ckstrlen "$2" 10 || exit 1
+	name="c$2"
+	pname="p$name"
+	srcip="$3"
+	srcport="$4"
+	destip="$5"
+	destport="$6"
+	interfaces="$7"
+
+	uci delete "mwan3.${pname}.use_member"
+	echo "$interfaces" | tr ',' '\n' | while read -r ifname ; do
+		[ -n "$ifname" ] && uci add_list "mwan3.${pname}.use_member=w${ifname}"
+	done
+	uci set "mwan3.${name}.src_ip=${srcip}"
+	uci set "mwan3.${name}.src_port=${srcport}"
+	uci set "mwan3.${name}.dest_ip=${destip}"
+	uci set "mwan3.${name}.dest_port=${destport}"
+	uci commit mwan3
+	;;
+orderrule)
+	echo "$2" | tr ',' '\n' | while read -r rule ; do
+		name="c$rule"
+		pname="p$name"
+		uci reorder "mwan3.${name}=1"
+		uci reorder "mwan3.${pname}=1"
+	done
+	uci commit mwan3
+	;;
+rmrule)
+	name="c$2"
+	pname="p$name"
+	uci delete "mwan3.${name}"
+	uci delete "mwan3.${pname}"
+	uci commit mwan3
+	;;
+fwtool-wanzone)
+	case "$2" in
+	update)
+		${NSWA_PREFIX}/libexec/update-wanzone.sh
+		;;
+	get)
+		uci get firewall.@zone[1].network
+		;;
+	*)
+		exit 1
+		;;
+	esac
+	;;
+*)
+	exit 1
+	;;
+esac
+
+exit 0

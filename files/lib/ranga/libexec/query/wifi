@@ -1,0 +1,50 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/auth.sh
+
+get_wificap_etc() {
+	[ -d "/etc/ranga/wificap/${1}/" ] || return 1
+	cat "/etc/ranga/wificap/${1}/${2}" 
+}
+
+auth || exit 3
+
+case "$1" in
+ls)
+	cat /etc/ranga/wifidev
+	;;
+info)
+	iwinfo "wlan${2}" info
+	;;
+cap)
+	case "$2" in
+	txpower)
+		iwinfo "wlan${3}" txpowerlist | grep -E -o '[0-9]+ dBm'
+		;;
+	channel)
+		get_wificap_etc "$3" channel || iwinfo "wlan${3}" freqlist | grep -E -o 'Channel [0-9]+'
+		;;
+	htmode)
+		get_wificap_etc "$3" htmode || iwinfo "wlan${3}" htmodelist | tr ' ' '\n'
+		;;
+	*)
+		exit 1
+		;;
+	esac
+	;;
+assoclist)
+	iwinfo "wlan${2}" assoclist
+	;;
+show-channels)
+	iw phy "phy${2}" channels
+	;;
+reg)
+	iw reg get
+	;;
+*)
+	exit 1
+	;;
+esac
+
+exit 0

@@ -1,0 +1,36 @@
+#!/bin/sh
+echo 'Content-type: text/plain; charset=utf-8'
+echo ''
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/cgi.sh
+
+pw=`parseQS pw`
+m=`parseQS m`
+
+[ "$m" != 'pw' ] && cgi_errquit 1
+
+pass=`cat /etc/ranga/pass-nswa`
+if [ "$pw" != "$pass" ]; then
+	cgi_errquit 3
+fi
+
+token=`dd if=/dev/urandom bs=10 count=1 2>/dev/null`
+
+if [ "$token" = "" ]; then
+	cgi_errquit 4
+fi
+
+token=`echo "$token" | sha256sum`
+token=${token%% *}
+
+logger -t nswa "User ${REMOTE_ADDR} login NSWA Superuser by passwd"
+
+echo -n "${token}" > /tmp/ranga_utoken
+echo 'code: 0'
+echo 'content-type: authToken'
+echo 'token-meta: v1;ascii64;octet'
+echo ''
+echo -n "${token}"
+
+exit 0

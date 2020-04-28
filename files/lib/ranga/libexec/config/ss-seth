@@ -1,0 +1,36 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/config.sh
+. ${NSWA_PREFIX}/lib/ckextra.sh
+. ${NSWA_PREFIX}/lib/auth.sh
+
+auth || exit 3
+
+if [ "$DISP_MODE" = "upload" ]; then
+	cat | head > "/etc/seth/${DISP_UPLOAD_FILENAME}.sth3"
+	[ "$?" = '0' ] || exit 4
+	exit 0
+fi
+
+case "$1" in
+ls)
+	ls "/etc/seth/"
+	;;
+show)
+	export IFS=$'\n'
+	ls "/etc/seth/" | while read -r name ; do
+		info=`seth-ranga "/etc/seth/$name"`
+		echo "$name:$info"
+	done
+	;;
+rm)
+	rm -f "/etc/seth/$2"
+	rm -f "/overlay/upper/etc/seth/$2"
+	;;
+*)
+	exit 1
+	;;
+esac
+
+exit 0

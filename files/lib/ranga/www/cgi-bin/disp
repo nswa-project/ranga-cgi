@@ -1,0 +1,62 @@
+#!/bin/sh
+echo 'Content-type: text/plain; charset=utf-8'
+echo ''
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/cgi.sh
+
+section=`parseQS section`
+target=`parseQS target`
+mode=`parseQS mode`
+
+case "$section" in
+*/*|*.*)
+	cgi_errquit 1
+	;;
+esac
+
+case "$target" in
+*/*|*.*)
+	cgi_errquit 1
+	;;
+esac
+
+[ -z "$section" -o ! -d "${NSWA_PREFIX}/libexec/${section}" ] && cgi_errquit 1
+if [ ! -x "${NSWA_PREFIX}/libexec/${section}/${target}" ]; then
+	echo 'disp-target-notfound: true'
+	cgi_errquit 1
+fi
+
+case "$mode" in
+raw)
+	export DISP_MODE="raw"
+	data=`"${NSWA_PREFIX}/libexec/${section}/${target}"`
+	code="$?"
+	;;
+upload)
+	export DISP_MODE="upload"
+	DISP_UPLOAD_FILENAME=`parseQS filename`
+	[ -z "$DISP_UPLOAD_FILENAME" ] && cgi_errquit 1
+	export DISP_UPLOAD_FILENAME
+	data=`"${NSWA_PREFIX}/libexec/${section}/${target}"`
+	code="$?"
+	;;
+*)
+	if [ -z "$target" ]; then
+		echo 'code: 0'
+		echo 'content-type: dispTargetsList'
+		echo "disp-section: $section"
+		echo ''
+		ls "${NSWA_PREFIX}/libexec/${section}"
+		exit 0
+	fi
+
+	data=`head -c 2097152 | ${NSWA_PREFIX}/libexec/dispatcher "${NSWA_PREFIX}/libexec/${section}/${target}"`
+	code="$?"
+	;;
+esac
+
+echo "code: $code"
+echo 'content-type: dispOutput'
+echo ''
+echo -n "$data"

@@ -1,0 +1,58 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/auth.sh
+
+errquit() {
+	echo "$1"
+	[ "$print_log" = 'true' ] && echo "$log" || echo -e "\nNO LOG DISPLAYED"
+	exit 0
+}
+
+xgrep() {
+	grep -F "$1" >/dev/null 2>&1
+}
+
+auth || exit 3
+
+sleep 1
+
+WAN=`uci get network.wan.ifname`
+ifconfig "${WAN}" | grep RUNNING >/dev/null || errquit 'WAN_DOWN'
+
+usrnam=`${NSWA_PREFIX}/libexec/config/interface get netkeeper usrnam`
+#[ "$?" != "0" ] && errquit 'INTERNAL_ERROR'
+[ -z "$usrnam" -o "$usrnam" = "username" ] && errquit 'INVALID_USERNAME'
+
+log=`logread | grep pppd`
+echo "$log" | xgrep "netkeeper plugin: ===============" || errquit 'NOT_DIALED'
+log="${log##*netkeeper plugin: ===============}"
+
+print_log=true
+
+#echo "$log" | xgrep "seth: SETHE_REQSYNC" && errquit 'SETH_NEED_TO_SYNC'
+
+echo "$log" | xgrep "Terminating on signal 15" && errquit 'WAIT_TIME_TOO_SHORT'
+echo "$log" | xgrep "Terminating on signal" && errquit 'SYS_ERROR'
+
+echo "$log" | xgrep "Timeout waiting for PADO packets" && errquit 'DIAL_TIMEOUT'
+
+#echo "$log" | xgrep "seth: found saved username" && errquit 'SETH_SAVED_EXPIRED'
+
+echo "$log" | xgrep "Remote message: " || errquit 'UNKNOWN'
+
+echo "$log" | xgrep "Authentication success,Welcome!" && errquit 'DIAL_SUCCESS'
+echo "$log" | xgrep '1|90|M-UM-KM-:M-E/MSIDM-NM-4M-WM-"M-2M-aM-;M-rM-CM-\M-BM-kM-4M-mM-!M-#' && errquit 'ISP_PSK_DENIED'
+echo "$log" | xgrep 'The subscriber is deregistered or the password is incorrect' && errquit 'ISP_PSK_DENIED'
+echo "$log" | xgrep 'Authentication fail' && errquit 'ISP_PSK_DENIED'
+echo "$log" | xgrep 'AAA authenticate terminal failed' && errquit 'ISP_AAA_FAILED'
+echo "$log" | xgrep 'user already in,' && errquit 'ISP_ACCOUNT_BUSY'
+echo "$log" | xgrep 'Pin code error,please check your time' && errquit 'ISP_NK_PIN_ERROR'
+echo "$log" | xgrep 'Pin code check failed' && errquit 'ISP_NK_PIN_FAILED'
+echo "$log" | xgrep 'Pin code error' && errquit 'ISP_NK_PIN_ERROR'
+echo "$log" | xgrep 'old pin code algorithm' && errquit 'ISP_NK_OLD_ALGORITHM'
+echo "$log" | xgrep '1|19|M-UM-KM-:M-E/MSIDM-NM-4M-WM-"M-2M-aM-;M-rM-CM-\M-BM-kM-4M-mM-!M-#' && errquit 'ISP_MULTIPLE_DENIED'
+echo "$log" | xgrep '2|91|M-UM-KM-:M-EM-WM-4M-LM-,M-7M-GM-<M-$M-;M-nM-!M-#' && errquit 'ISP_BALANCE_INSUFFICIENT'
+
+errquit 'UNKNOWN_RFC1334MSG'
+exit 0

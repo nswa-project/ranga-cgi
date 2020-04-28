@@ -1,0 +1,34 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. /extensions/ranga.ext.base/lib/extname.sh
+
+cgi_errquit() {
+	echo 'Content-type: text/plain; charset=utf-8'
+	echo
+	echo "code: $1"
+	echo 'error-origin: invoke-ext'
+	echo
+	exit 0
+}
+
+PATH_INFO="${PATH_INFO#/}"
+pkgname="${PATH_INFO%%/*}"
+check_ext_name "$pkgname" || cgi_errquit 1
+api="${PATH_INFO#*/}"
+
+[ "${#api}" -gt 48 ] && cgi_errquit 1 
+
+file="/extensions/$pkgname/api/$api.lua"
+[ -f "$file" ] || cgi_errquit 7
+
+if [ "$HTTP_USER_AGENT" = "ranga-extensions-debug" ]; then
+	exec 2>&1
+	echo 'Content-type: text/plain; charset=utf-8'
+	echo
+	echo 'code: 0'
+	echo 'content-type: extensionDebug'
+	echo
+	echo "!!! debug mode on" >&2
+fi
+exec ${NSWA_PREFIX}/libexec/su 1000 /extensions/ranga.ext.base/extloader.lua "$file"

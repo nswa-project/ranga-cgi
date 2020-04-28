@@ -1,0 +1,23 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. /extensions/ranga.ext.base/lib/extname.sh
+
+cgi_errquit() {
+	echo 'Content-type: text/plain; charset=utf-8'
+	echo
+	echo "$1"
+	exit 0
+}
+
+pkgname="${PATH_INFO#/}"
+pkgname="${pkgname%/}"
+check_ext_name "$pkgname" || cgi_errquit "pkgname invailed"
+
+file="/extensions/$pkgname/wcapp-v1.html"
+[ -f "$file" ] || cgi_errquit "This extension does not provide a wcapp"
+
+echo 'Content-type: text/html; charset=utf-8'
+echo 'Cache-Control: no-cache, no-store, must-revalidate'
+echo
+cat "$file"

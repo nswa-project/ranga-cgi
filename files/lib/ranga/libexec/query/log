@@ -1,0 +1,23 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/auth.sh
+
+auth || exit 3
+
+case "$1" in
+kern)
+	dmesg
+	;;
+seth)
+	logread | grep seth-sync | sed 's/user.notice seth-sync//g'
+	;;
+lastact)
+	cat /etc/ranga/last_act.log
+	;;
+*)
+	logread
+	;;
+esac
+
+exit 0

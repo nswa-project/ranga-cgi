@@ -1,0 +1,107 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/config.sh
+. ${NSWA_PREFIX}/lib/ckextra.sh
+. ${NSWA_PREFIX}/lib/auth.sh
+
+auth || exit 3
+
+if [ "$DISP_MODE" = "upload" ]; then
+	case "$DISP_UPLOAD_FILENAME" in
+	hosts)
+		cat | head -c 1m > /etc/hosts-nswa
+		;;
+	addrfile)
+		cat | grep -E '^address=/[^/ ]+/([0-9]{1,3}\.){3}[0-9]{1,3}$' | head -c 1m > /etc/dnsmasq.d/addr
+		;;
+	esac
+	exit 0
+fi
+
+config() {
+	local action="$1"
+	local key="$2"
+	local value="$3"
+
+	case "$key" in
+	peerdns)
+		case "$action" in
+		set)
+			v='/tmp/nosuchfile'
+			[ "$value" = '1' ] && v=`cat /etc/ranga/def-resolv`
+			ucimapper set "dhcp.@dnsmasq[0].resolvfile" "${v}"
+			;;
+		get)
+			v=`uci get dhcp.@dnsmasq[0].resolvfile`
+			[ "$v" = "/tmp/nosuchfile" ] && echo 0 || echo 1
+			;;
+		esac
+		;;
+	rebind_protection|allservers)
+		ucimapper "${action}" "dhcp.@dnsmasq[0].${key}" "${value}" bool
+		return $?
+		;;
+	queryport|port)
+		ucimapper "${action}" "dhcp.@dnsmasq[0].${key}" "${value}" int set-blank-reset
+		return $?
+		;;
+	*)
+		return 1
+		;;
+	esac
+
+	return 0
+}
+
+show() {
+	echo -n "$1: "
+	config get "$1"
+	[ "$?" != '0' ] && echo
+}
+
+case "$1" in
+add-server)
+	[ -z "$2" ] && exit 1
+
+	b=`echo -n "${2}" | tr -d '\r\n'`
+	ckinet4 "$b" || exit 1
+
+	uci add_list dhcp.@dnsmasq[0].server="$b"
+	uci commit dhcp
+	;;
+rem-server)
+	[ -z "$2" ] && exit 1
+
+	b=`echo -n "${2}" | tr -d '\r\n'`
+	ckinet4 "$b" || exit 1
+
+	uci del_list dhcp.@dnsmasq[0].server="$b"
+	uci commit dhcp
+	;;
+list-server)
+	t=`uci show dhcp.@dnsmasq[0].server 2>/dev/null`
+	echo "${t#*=}"
+	exit 0
+	;;
+set)
+	config set "$2" "$3"
+	exit $?
+	;;
+get)
+	config get "$2"
+	exit $?
+	;;
+show)
+	show peerdns
+	show rebind_protection
+	show allservers
+	show queryport
+	show port
+	;;
+*)
+	exit 1
+	;;
+esac
+
+exit 0

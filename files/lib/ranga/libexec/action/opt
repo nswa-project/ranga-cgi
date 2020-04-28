@@ -1,0 +1,41 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/auth.sh
+
+auth || exit 3
+
+case "$1" in
+ls)
+	ls /etc/ranga/opt.d
+	;;
+ls-enabled)
+	ls /etc/ranga/opt.rc.d
+	;;
+start|stop|restart)
+	[ -z "$2" ] && exit 1
+	[ -x "/etc/ranga/opt.d/$2" ] || exit 2
+	"/etc/ranga/opt.d/$2" "$1"
+	;;
+action)
+	[ -z "$2" -o -z "$3" ] && exit 1
+	[ -x "/etc/ranga/opt.d/$2" ] || exit 2
+	"/etc/ranga/opt.d/$2" action "$3" "$4"
+	exit $?
+	;;
+enable)
+	[ -z "$2" ] && exit 1
+	[ -x "/etc/ranga/opt.d/$2" ] || exit 2
+	ln -s "/etc/ranga/opt.d/$2" "/etc/ranga/opt.rc.d/$2"
+	;;
+disable)
+	[ -z "$2" ] && exit 1
+	[ -f "/etc/ranga/opt.rc.d/$2" ] || exit 1
+	rm -f "/etc/ranga/opt.rc.d/$2"
+	;;
+*)
+	exit 1
+	;;
+esac
+
+exit 0

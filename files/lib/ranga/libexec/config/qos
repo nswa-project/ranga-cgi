@@ -1,0 +1,39 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/auth.sh
+
+auth || exit 3
+
+if [ "$DISP_MODE" = "raw" ]; then
+	read v
+	case "$v" in
+	.ranga.qos)
+		exec ${NSWA_PREFIX}/libexec/qosc
+		;;
+	*)
+		echo "Unsupported type: $v"
+		;;
+	esac
+	exit 1
+fi
+
+case "$1" in
+enable)
+	/etc/init.d/qos enable
+	/etc/init.d/qos start < /dev/null > /dev/null 2>&1
+	;;
+disable)
+	/etc/init.d/qos disable
+	/etc/init.d/qos stop
+	qos-stop
+	;;
+is-enabled)
+	[ -f /etc/rc.d/S50qos ] && echo "enabled" || echo "disabled"
+	;;
+*)
+	exit 1
+	;;
+esac
+
+exit 0

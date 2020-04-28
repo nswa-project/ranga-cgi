@@ -1,0 +1,37 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/auth.sh
+
+auth || exit 3
+
+name=''
+
+get_init_svc() {
+	case "$1" in
+	ipv6_dhcp_ra_server)
+		name='odhcpd'
+		;;
+	*)
+		return 1
+		;;
+	esac
+
+	return 0
+}
+
+get_init_svc "$2" || exit 1
+
+case "$1" in
+is-enabled)
+	"/etc/init.d/$name" enabled && echo "enabled" || echo "disabled"
+	;;
+start|stop|restart|enable|disable)
+	"/etc/init.d/$name" "$1" && exit 0 || exit 4
+	;;
+*)
+	exit 1
+	;;
+esac
+
+exit 0

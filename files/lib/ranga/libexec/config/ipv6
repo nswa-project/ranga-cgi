@@ -1,0 +1,51 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/config.sh
+. ${NSWA_PREFIX}/lib/ckextra.sh
+. ${NSWA_PREFIX}/lib/auth.sh
+
+auth || exit 3
+
+config() {
+	local action="$1"
+	local key="$2"
+	local value="$3"
+
+	case "$key" in
+	ulaprefix)
+		ucimapper "${action}" "network.globals.ula_prefix" "${value}"
+		return $?
+		;;
+	*)
+		return 1
+		;;
+	esac
+
+	return 0
+}
+
+show() {
+	echo -n "$1: "
+	config get "$1"
+	[ "$?" != '0' ] && echo
+}
+
+case "$1" in
+set)
+	config set "$2" "$3"
+	exit $?
+	;;
+get)
+	config get "$2"
+	exit $?
+	;;
+show)
+	show ulaprefix
+	;;
+*)
+	exit 1
+	;;
+esac
+
+exit 0

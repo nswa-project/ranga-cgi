@@ -1,0 +1,20 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/auth.sh
+
+auth_dial || exit 3
+
+case "$1" in
+''|*[!0-9]*)
+	cat <<EOF
+Set NSWA Ranga system datetime by UNIX time.
+usage: date <UNIXTimestamp>
+EOF
+	exit 0
+	;;
+esac
+
+date +%s -s "@${1}" 2>&1 > /dev/null | grep "date" > /dev/null 2>&1
+[ "$?" = '0' ] && exit 1
+exit 0

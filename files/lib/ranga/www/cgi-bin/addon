@@ -1,0 +1,79 @@
+#!/bin/sh
+echo 'Content-type: text/plain; charset=utf-8'
+echo ''
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/cgi.sh
+. ${NSWA_PREFIX}/lib/auth.sh
+. /extensions/ranga.ext.base/lib/extname.sh
+
+auth || cgi_errquit 3
+
+action=`parseQS action`
+
+parse_pkgname() {
+	pkgname=`parseQS pkgname`
+	check_ext_name "$pkgname" || cgi_errquit 1
+}
+
+case "$action" in
+install)
+	[ "$REQUEST_METHOD" != "POST" ] && cgi_errquit 1
+
+	cgi_content extInstaller
+	${NSWA_PREFIX}/libexec/su 1000 /extensions/ranga.ext.base/extinst.sh
+	;;
+remove)
+	parse_pkgname
+
+	curwebcon=`readlink /www/webcon`
+	curwebcon="${curwebcon#/extensions/}"
+	curwebcon="${curwebcon%%/*}"
+
+	[ "$curwebcon" = "${pkgname}" ] && cgi_errquit 8
+
+	${NSWA_PREFIX}/libexec/su 1000 /bin/rm -r "/extensions/${pkgname}" > /dev/null
+	[ "$?" != '0' ] && cgi_errquit 7
+
+	cgi_content
+	echo "Package ${pkgname} removed."
+	/extensions/ranga.ext.base/update-caches.sh
+	;;
+info)
+	parse_pkgname
+	[ -d "/extensions/${pkgname}" ] || cgi_errquit 1
+
+	cgi_content extensionManifest
+	cat "/extensions/${pkgname}/manifest"
+	;;
+list)
+	cgi_content extensionsList
+	ls /extensions
+	;;
+cache)
+	cgi_content
+	/extensions/ranga.ext.base/update-caches.sh
+	;;
+setwebcon)
+	parse_pkgname
+	rm -f /www/webcon
+	ln -s "/extensions/${pkgname}/webcon" /www/webcon
+	[ "$?" = '0' ] || cgi_errquit 7
+	cgi_errquit 0
+	;;
+ls-components)
+	cgi_content componentsList
+	for file in `ls /etc/ranga/components/`; do
+		echo "COMPONENT UUID $file"
+		cat "/etc/ranga/components/$file"
+		echo ''
+	done
+	;;
+undeploy)
+	cgi_errquit 2
+	;;
+*)
+	cgi_errquit 1
+	;;
+esac
+

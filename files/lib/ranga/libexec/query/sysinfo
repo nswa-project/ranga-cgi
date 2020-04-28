@@ -1,0 +1,53 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+
+usage() {
+		cat <<EOF
+usage: sysinfo [-vpu]
+
+  -v    show system version
+  -p    show device profile (chip, arch, board, etc.)
+  -u    show resource usage (memory, storage, etc.)
+  -U    show uptime
+EOF
+}
+
+meminfo() {
+	eval `cat /proc/meminfo | sed -e 's/: */=/g' -e '/(/d' -e 's/ .*$//g'`
+	memused=$(( ${MemTotal} - ${MemFree} ))
+	memcached=$(( ${Cached} + ${Slab} ))
+}
+
+while getopts ":vpuU" o; do
+	case "$o" in
+	v)
+		echo "version: `cat /etc/ranga/FWVC`"
+		verlock='none'
+		[ -f /etc/ranga/update_lock ] && verlock='upgrade'
+		[ -f /etc/ranga/fullpackfail ] && verlock='fullpack'
+		echo "verlock: $verlock"
+		echo "channel: `cat /etc/ranga/channel`"
+		echo "kernel: `uname -rv`"
+		;;
+	p)
+		cat /etc/ranga/profile
+		;;
+	u)
+		meminfo
+		echo "memory: ${MemTotal}/${memused}/${memcached}/${Buffers}/${Shmem}"
+		echo "storage: `df -h | grep "^overlayfs:/overlay" | awk '{printf $3; printf "/"; printf $2}'`"
+		;;
+	U)
+		echo "uptime: `uptime`"
+		;;
+	*)
+		usage
+		exit 1
+		;;
+	esac
+done
+
+[ "$OPTIND" = '1' ] && usage && exit 1
+
+exit 0

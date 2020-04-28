@@ -1,0 +1,72 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/config.sh
+. ${NSWA_PREFIX}/lib/auth.sh
+. /extensions/ranga.ext.base/lib/extname.sh
+
+ckcronname() {
+	[ "${#1}" -gt 128 ] && return 1
+	case "$1" in
+	*/*|*..*|*' '*)
+		return 1
+		;;
+	esac
+	return 0
+}
+
+cktime() {
+	echo "$1" | grep "^[0-9/*,-]*$" > /dev/null 2>&1 || return 1
+	return 0
+}
+
+auth || exit 3
+
+case "$1" in
+cat)
+	cat /etc/crontabs/extensions | sed 's/  exec \/croncall//g'
+	exit 0
+	;;
+add)
+	shift
+	pkgname="$1"
+	name="$2"
+	args="$3"
+
+	m="$4"
+	h="$5"
+	d="$6"
+	month="$7"
+	w="$8"
+
+	check_ext_name "$pkgname" || exit 1
+	[ -d "/extensions/${pkgname}" ] || exit 7
+
+	[ -z "$name" ] && exit 1
+	ckcronname "$name" || exit 1
+	ckcronname "$args" || exit 1
+
+	cktime "$m" || exit 1
+	cktime "$h" || exit 1
+	cktime "$d" || exit 1
+	cktime "$month" || exit 1
+	cktime "$w" || exit 1
+
+	echo "$m $h $d $month $w  exec /croncall ${pkgname} ${name} ${args}" >> /etc/crontabs/extensions
+	exit 0
+	;;
+rem)
+	shift
+	n="$1"
+	ckint "$1" || exit 1
+	sed -i "${n}d" /etc/crontabs/extensions
+	exit 0
+	;;
+clear)
+	cat /dev/null > /etc/crontabs/extensions
+	exit 0
+	;;
+*)
+	exit 1
+	;;
+esac

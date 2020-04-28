@@ -1,0 +1,56 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/auth.sh
+. ${NSWA_PREFIX}/lib/mwan.sh
+
+auth || exit 3
+
+case "$1" in
+wireless)
+	wifi reload < /dev/null > /dev/null 2>&1
+	${NSWA_PREFIX}/run-hooks "reldwl" < /dev/null > /dev/null 2>&1 &
+	;;
+network)
+	/etc/init.d/network restart < /dev/null > /dev/null 2>&1
+	;;
+dns-server|dhcp|dnsdhcp)
+	/etc/init.d/dnsmasq restart < /dev/null > /dev/null 2>&1
+	;;
+mwan)
+	mwan_is_enabled || exit 1
+	/etc/init.d/firewall restart < /dev/null > /dev/null 2>&1
+	mwan3 restart < /dev/null > /dev/null 2>&1
+	;;
+rvlan-setup)
+	${NSWA_PREFIX}/libexec/create-rvlan.sh
+	;;
+qos)
+	/etc/init.d/qos restart < /dev/null > /dev/null 2>&1
+	;;
+cron)
+	/etc/init.d/cron restart < /dev/null > /dev/null 2>&1
+	;;
+system)
+	(sleep 2; reboot) < /dev/null > /dev/null 2>&1 &
+	;;
+*)
+	cat <<EOF
+usage: restart <name>
+
+  wireless     - restart wireless devices
+  network      - restart network services
+  dns-server   - restart DNS cache server
+  dhcp         - restart DHCP server
+  dnsdhcp      - restart DNS cache server and DHCP server
+  mwan         - restart Multihoming routing daemon
+  rvlan-setup  - restart rvlan setup routine
+  qos          - restart QoS service
+  cron         - restart cron daemon
+  system       - restart system (aka reboot)
+EOF
+	exit 0
+	;;
+esac
+
+exit 0

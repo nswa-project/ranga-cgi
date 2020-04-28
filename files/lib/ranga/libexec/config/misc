@@ -1,0 +1,44 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/config.sh
+. ${NSWA_PREFIX}/lib/auth.sh
+
+auth || exit 3
+
+case "$1" in
+ls)
+	uci show nswa.flags | tail -n +2
+	uci show nswa.misc | tail -n +2
+	exit 0
+	;;
+set-flag)
+	action="set"
+	key="flags.$2"
+	value="$3"
+	ckbool "$value" || exit 1
+	;;
+set-misc)
+	action="set"
+	key="misc.$2"
+	value="$3"
+	;;
+get)
+	action="get"
+	key="$2"
+	;;
+set-passwd)
+	value="$2"
+	echo -n "$2" > /etc/ranga/pass-nswa
+	exit 0
+	;;
+*)
+	exit 1
+	;;
+esac
+
+uci get "nswa.${key}" > /dev/null 2>&1
+[ "$?" != "0" ] && exit 1
+
+ucimapper "${action}" "nswa.${key}" "${value}"
+exit $?

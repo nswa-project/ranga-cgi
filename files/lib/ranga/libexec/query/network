@@ -1,0 +1,126 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/auth.sh
+
+auth_dial || exit 3
+
+is_if_conn() {
+	[ -z "$1" ] && return 1
+
+	if [ -d "/sys/class/net/${1}" ]; then
+		ifconfig "${1}" 2>/dev/null | grep 'inet addr' > /dev/null 2>&1
+		[ "$?" = '0' ] && return 0
+	fi
+
+	return 1
+}
+
+__showif() {
+	local ifname="$1"
+	local conn='0'
+	local statistics=''
+
+	if [ -n "$ifname" ]; then
+		is_if_conn "$ifname" && conn='1'
+		if [ "$conn" = '1' ]; then
+			local rxb=`cat /sys/class/net/${ifname}/statistics/rx_bytes`
+			local txb=`cat /sys/class/net/${ifname}/statistics/tx_bytes`
+			statistics="$rxb,$txb"
+		fi
+	fi
+
+	if [ "$new_api" = '1' ]; then
+		ipaddrs=`ip addr show dev "$ifname" | grep -Eo 'inet6{0,1} [^ ]+' | tr '\n' ','`
+		echo "${2};${3};${conn};${statistics};${ipaddrs%,}"
+	else
+		echo "${2};${3};${conn};${statistics}"
+	fi
+}
+
+showif() {
+	local ifname=''
+	local type=`uci get "network.${1}.proto"`
+
+	case "$type" in
+	static|dhcp)
+		ifname=`uci get network.${1}.ifname`
+		;;
+	pppoe)
+		uci get "network.${1}.pppd_options" > /dev/null 2>&1
+		[ "$?" = "0" ] && type='netkeeper'
+		ifname="pppoe-${1}"
+		;;
+	none)
+		ifname=''
+		return
+		;;
+	esac
+
+	__showif "$ifname" "$1" "$type"
+}
+
+
+[ "$1" = "status" ] && new_api=1
+
+case "$1" in
+inet)
+	[ -z "$3" ] && exit 1
+	case "$2" in
+	pppoe)
+		name="pppoe-$3"
+		;;
+	static|dhcp|none)
+		name=`uci get network."$3".ifname`
+		;;
+	esac
+	ip addr show "$name"
+	;;
+wan-plug)
+	WAN=`uci get network.wan.ifname`
+	if ifconfig "${WAN}" | grep RUNNING >/dev/null 2>&1; then
+		echo '1'
+	else
+		echo '0'
+	fi
+	;;
+mwan)
+	mwan3 status
+	;;
+dhcp-leases)
+	cat /tmp/dhcp.leases
+	;;
+arp)
+	cat /proc/net/arp
+	;;
+inet4neigh)
+	ip -4 neigh show
+	;;
+inet6neigh)
+	ip -6 neigh show
+	;;
+route)
+	netstat -rn
+	;;
+inet6route)
+	route -n -A inet6
+	;;
+inet6route-porcelain)
+	ip -6 route
+	;;
+inet6-lan-addresses)
+	ip -6 address show dev br-lan
+	;;
+*)
+	pgrep -x -n scdiald > /dev/null && echo '!scdial-is-enabled'
+	echo "!system-uptime=`cat /proc/uptime | cut -d " " -f 1`"
+	__showif 'br-lan' lan static
+	showif 'wan'
+	__showif 'pppoe-netkeeper' netkeeper netkeeper
+	for i in `uci show network | grep "^network.md.*interface$" | sed 's/^[^\.]*\.\([^=]*\)=.*/\1/g'` ; do
+		showif "${i}"
+	done
+	;;
+esac
+
+exit 0

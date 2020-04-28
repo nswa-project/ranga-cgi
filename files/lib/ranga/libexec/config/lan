@@ -1,0 +1,39 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/ckextra.sh
+. ${NSWA_PREFIX}/lib/auth.sh
+
+auth || exit 3
+
+case "$1" in
+setinet4)
+	ckinet4 "$2" || exit 1
+	ckinet4 "$3" || exit 1
+	uci set "network.lan.ipaddr=${2}"
+	uci set "network.lan.netmask=${3}"
+	uci commit network
+	(sleep 2; reboot) < /dev/null > /dev/null 2>&1 &
+	;;
+inet6.assign)
+	exit 2
+	;;
+inet6.hint)
+	exit 2
+	;;
+inet6.gw)
+	exit 2
+	;;
+inet6.addr)
+	exit 2
+	;;
+show)
+	echo "inet4.ipaddr: `uci get network.lan.ipaddr`"
+	echo "inet4.netmask: `uci get network.lan.netmask`"
+	;;
+*)
+	exit 1
+	;;
+esac
+
+exit 0

@@ -1,0 +1,64 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/auth.sh
+
+auth || exit 3
+
+map() {
+	key=""
+	case "$1" in
+	offload)
+		key='firewall.@defaults[0].flow_offloading'
+		enablev='1'
+		;;
+	hwoffload)
+		key='firewall.@defaults[0].flow_offloading_hw'
+		enablev='1'
+		;;
+	mssclamping)
+		key='firewall.@zone[1].mtu_fix'
+		enablev='1'
+		disablev='0'
+		;;
+	esac
+}
+
+getenable() {
+	[ "`uci get "$1" 2>/dev/null`" = "$2" ] &&  echo "enabled" || echo "disabled"
+}
+
+if [ "$1" = 'show' ]; then
+	echo -n "offload: "
+	getenable "firewall.@defaults[0].flow_offloading" 1
+	echo -n "hwoffload: "
+	getenable "firewall.@defaults[0].flow_offloading_hw" 1
+	echo -n "mssclamping: "
+	getenable "firewall.@zone[1].mtu_fix" 1
+	exit 0
+fi
+
+map "$1"
+[ -z "$key" ] && exit 1
+
+case "$2" in
+is-enabled)
+	getenable "$key" "$enablev"
+	;;
+enable)
+	uci set "${key}=${enablev}"
+	uci commit
+	;;
+disable)
+	if [ -z "$disablev" ]; then
+		uci delete "${key}"
+	else
+		uci set "${key}=${disablev}"
+	fi
+	uci commit
+	;;
+*)
+	exit 1
+	;;
+esac
+exit 0

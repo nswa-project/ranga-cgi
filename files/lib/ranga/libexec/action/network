@@ -1,0 +1,117 @@
+#!/bin/sh
+
+. /etc/ranga/pub.sh
+. ${NSWA_PREFIX}/lib/auth.sh
+
+auth_dial || exit 3
+
+__dial_and_wait() {
+	ifname="pppoe-${1}"
+	[ -d "/sys/class/net/${ifname}" ] && return 8
+
+	ifup "${1}"
+	
+	n='0'
+	while true ; do
+		sleep 1
+		n=$(($n+1))
+
+		if [ -d "/sys/class/net/${ifname}" ]; then
+			ipaddr=`ifconfig "${ifname}" 2>/dev/null | grep "inet addr" | cut -d ':' -f 2 | cut -d ' ' -f 1`
+			if [ -n "${ipaddr}" ]; then
+				return 0
+			fi
+		fi
+
+		if [ "$n" = "10" ]; then
+			ifdown "${1}"
+			break
+		fi
+	done
+	return 7
+}
+
+case "$2" in
+lan)
+	exit 1
+	;;
+esac
+
+exec 1000>/tmp/nswa-net.lock
+
+case "$1" in
+up)
+	[ -z "$2" ] && exit 1
+	flock -n 1000
+	[ "$?" != '0' ] && exit 5
+
+	ifup "${2}"
+	sleep 2
+	;;
+dialup)
+	[ -z "$2" ] && exit 1
+	flock -n 1000
+	[ "$?" != '0' ] && exit 5
+
+	__dial_and_wait "$2"
+	exit $?
+	;;
+hangup|down)
+	[ -z "$2" ] && exit 1
+	flock -n 1000
+	[ "$?" != '0' ] && exit 5
+
+	ifdown "${2}"
+	sleep 1
+	exit 0
+	;;
+nkdial)
+	[ -z "$2" ] && exit 1
+	[ -z "$3" ] && exit 1
+	flock -n 1000
+	[ "$?" != '0' ] && exit 5
+
+	pin="`echo "$3" | base64 -d`"
+	username=`uci get "network.$2.username"`
+	echo -n "${pin}${username}" > /tmp/nk-override
+
+	__dial_and_wait "$2"
+	retv="$?"
+
+	rm -f /tmp/nk-override
+	exit "$retv"
+	;;
+start-server)
+	[ -z "$2" ] && exit 1
+	flock -n 1000
+	[ "$?" != '0' ] && exit 5
+
+	[ -d "/sys/class/net/pppoe-${2}" ] && exit 8
+
+	pgrep -x -n scdiald > /dev/null && exit 6
+
+	echo '0' > /tmp/nk4-stat
+	${NSWA_PREFIX}/libexec/pppoe-server.sh "$2" < /dev/null > /dev/null 2>&0 &
+	;;
+server-status)
+	cat /tmp/nk4-stat
+	;;
+-h)
+	cat <<EOF
+usage: network <command> ...
+
+  up <interface>            - connect a interface (do not use for PPPoE interfaces)
+  down <interface>          - disconnect connection on interface
+  dialup <interface>        - dial-up a PPPoE interface
+  hangup <interface>        - disconnect PPPoE connection on interface
+  nkdial <interface> <pin_hash_base64ed> - dial-up NK with this prefix
+  start-server <interface>  - start a PPPoE auth server on interface to fetch username
+  server-status             - query PPPoE auth server status
+
+EOF
+	;;
+*)
+	exit 1
+esac
+
+exit 0
