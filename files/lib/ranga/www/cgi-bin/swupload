@@ -52,8 +52,8 @@ patch)
 	flock -n 1000
 	[ "$?" != "0" ] && errquit 5
 
-	rm -f /tmp/nswaup.bin
-	cat > /tmp/nswaup.bin
+	rm -f /tmp/nswa-patch.tar.gz
+	cat > /tmp/nswa-patch.tar.gz
 	cat /dev/null > /tmp/sysupgrade.log
 	/lib/ranga/sysupgrade.sh "$reboot" < /dev/null > /dev/null 2>&1 &
 
